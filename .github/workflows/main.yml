@@ -1,0 +1,62 @@
+
+name: Deploy Vite Project to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./OneDrive/Desktop/Team Orion/Bracket
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # We are intentionally disabling caching to ensure a 100% fresh environment.
+
+      # --- THE DEFINITIVE FIX IS HERE ---
+      # This step completely wipes the dependencies and performs a fresh install.
+      # This is the most aggressive way to ensure a clean build environment.
+      - name: Force a clean re-installation of dependencies
+        run: |
+          echo "Wiping all previous node modules and lock files..."
+          rm -rf node_modules
+          rm -f package-lock.json
+          echo "Performing a fresh install from package.json..."
+          npm install
+      - name: Build project
+        run: npm run build
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './OneDrive/Desktop/Team Orion/Bracket/dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
