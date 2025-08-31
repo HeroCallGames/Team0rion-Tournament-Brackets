@@ -214,43 +214,67 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         return x < view.x + view.w + margin && x + w > view.x - margin && y < view.y + view.h + margin && y + h > view.y - margin;
       };
         
-      p.preload = () => {
-        const FALLBACK_ICON_B64 = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64"><rect width="64" height="64" fill="#4A5568"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="40" fill="#E2E8F0">?</text></svg>');
+      // --- DELETED ---
+      // The p.preload() function has been removed because it is obsolete in p5.js v2.0+
         
-        // Load the placeholder first, so it's ready for any failures.
-        placeholderIcon = p.loadImage(FALLBACK_ICON_B64);
-
-        sketchTournament.players.forEach(player => {
-            if (player.icon) {
-                const resolvedUrl = resolveAssetRef(player.icon);
-                resolvedPlayerIcons.set(player.id, resolvedUrl);
-            }
-        });
-
-        const uniqueIconUrls = new Set(resolvedPlayerIcons.values());
-        uniqueIconUrls.forEach(url => {
-            if (url && !loadedIcons.has(url)) {
-                p.loadImage(
-                    url,
-                    (img) => {
-                        loadedIcons.set(url, img);
-                    },
-                    () => {
-                        console.error("Failed to load image asset, using placeholder:", url);
-                        loadedIcons.set(url, placeholderIcon);
-                    }
-                );
-            }
-        });
-      };
-
-      p.setup = () => {
+      // --- MODIFIED ---
+      // p.setup is now an async function to correctly handle modern asset loading.
+      p.setup = async () => {
         p.createCanvas(parentDiv.offsetWidth, parentDiv.offsetHeight);
         p.colorMode(p.HSB, 360, 100, 100, 1);
         p.noFill();
         p.textFont('Orbitron');
         p.cursor('grab');
 
+        // --- ADDED: ASYNC ASSET LOADING LOGIC ---
+        
+        // Helper to load an image using a Promise, which works with async/await
+        const loadImageAsync = (url: string): Promise<p5.Image> => {
+          return new Promise((resolve, reject) => {
+            p.loadImage(url, 
+              img => resolve(img), 
+              () => reject(new Error(`Failed to load image at URL: ${url}`))
+            );
+          });
+        };
+        
+        // Load the placeholder icon first and wait for it to be ready.
+        const FALLBACK_ICON_B64 = 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64"><rect width="64" height="64" fill="#4A5568"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="40" fill="#E2E8F0">?</text></svg>');
+        try {
+            placeholderIcon = await loadImageAsync(FALLBACK_ICON_B64);
+        } catch (e) {
+            console.error("CRITICAL: Could not load the fallback placeholder icon.", e);
+            placeholderIcon = p.createImage(1, 1); // Create a dummy image to prevent crashes
+        }
+
+        // Resolve all player icon URLs from the tournament data
+        sketchTournament.players.forEach(player => {
+            if (player.icon) {
+                const resolvedUrl = resolveAssetRef(player.icon);
+                resolvedPlayerIcons.set(player.id, resolvedUrl);
+            }
+        });
+        
+        // Create a list of promises to load all unique icons in parallel for performance.
+        const uniqueIconUrls = Array.from(new Set(resolvedPlayerIcons.values()));
+        const iconLoadPromises = uniqueIconUrls.map(async (url) => {
+            if (url && !loadedIcons.has(url)) {
+                try {
+                    const img = await loadImageAsync(url);
+                    loadedIcons.set(url, img);
+                } catch {
+                    console.error("Failed to load image asset, using placeholder:", url);
+                    loadedIcons.set(url, placeholderIcon); // Use placeholder on failure
+                }
+            }
+        });
+
+        // Wait for all image loading promises to complete before continuing.
+        await Promise.all(iconLoadPromises);
+
+        // --- END OF NEW ASSET LOADING LOGIC ---
+
+        // This is the original setup logic. It now runs safely *after* all images are loaded.
         colorPalette = [
             p.color(355, 95, 100), p.color(200, 95, 100),
             p.color(130, 95, 100), p.color(55, 95, 100),
@@ -489,7 +513,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         const p_drawingContext = p.drawingContext as CanvasRenderingContext2D;
         const whiteColor = p.color(0, 0, 100);
         
-        // Always draw the separator line
         p_drawingContext.shadowBlur = 10;
         p_drawingContext.shadowColor = whiteColor.toString();
         p.stroke(whiteColor);
@@ -508,21 +531,18 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
     
             const boxX = boxCenterX - boxW / 2;
             
-            // "Cut" a piece of the line for the box to sit in
             p.noStroke();
             p.fill(13, 15, 26); 
             p.rect(boxX - 2, y - boxH / 2, boxW + 4, boxH);
     
-            // Draw the box itself
             p_drawingContext.shadowBlur = 8;
             p_drawingContext.shadowColor = whiteColor.toString();
             p.strokeWeight(1.5);
             p.stroke(whiteColor);
-            p.fill(13, 15, 26, 0.85); // Semi-transparent box background
+            p.fill(13, 15, 26, 0.85); 
             p.rect(boxX, y - boxH / 2, boxW, boxH, 4);
             p_drawingContext.shadowBlur = 0;
             
-            // Draw the text inside the box
             p.noStroke();
             p.fill(whiteColor);
             p.textAlign(p.CENTER, p.CENTER);
@@ -586,13 +606,12 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
             viewScale = p.lerp(animation.startScale, animation.endScale, easedT);
             viewOffset = p5.Vector.lerp(animation.startOffset, animation.endOffset, easedT);
             
-            if (t >= 1) { // Phase complete
+            if (t >= 1) { 
                 if (animation.phase === 'zoom-out' && animation.targetNode) {
-                    // Start zoom-in phase
                     animation.phase = 'zoom-in';
                     animation.startTime = now;
                     animation.startScale = viewScale;
-                    animation.endScale = 1.5; // Zoom in a bit more
+                    animation.endScale = 1.5;
                     animation.startOffset = viewOffset.copy();
                     
                     animation.endOffset = p.createVector(
@@ -600,7 +619,7 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
                         p.height / 2 - animation.targetNode.pos.y * animation.endScale
                     );
 
-                } else { // Animation finished
+                } else {
                     animation.isAnimating = false;
                     animation.targetNode = null;
                 }
@@ -619,7 +638,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         };
 
         if (p5Rounds.length > 0) {
-            // Find the furthest round that has a player *in it*.
             let headerRoundIndex = 0;
             for (let r = p5Rounds.length - 1; r >= 0; r--) {
                 if (p5Rounds[r] && p5Rounds[r].some(node => node.playerId !== null)) {
@@ -631,15 +649,10 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
             if (p5Rounds[headerRoundIndex] && p5Rounds[headerRoundIndex].length > 0) {
                 let text = '';
                 const numberWords = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
-                // The round number for display is 1-based, starting with the player list as "Round One".
                 const displayRoundNumber = headerRoundIndex + 1;
 
-                // Number of nodes helps determine special round names (e.g., Top 8, Finals).
-                // Note: For headerRoundIndex 0, this is the number of players, not matches.
                 const numNodesInHeaderRound = p5Rounds[headerRoundIndex]?.length || 0;
 
-                // The first column (headerRoundIndex = 0) is always a numbered round.
-                // Subsequent rounds can have special names.
                 if (headerRoundIndex > 0 && numNodesInHeaderRound === 1) {
                     text = 'Champion';
                 } else if (headerRoundIndex > 0 && numNodesInHeaderRound === 2) {
@@ -649,16 +662,13 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
                 } else if (headerRoundIndex > 0 && numNodesInHeaderRound === 8) {
                     text = 'Top 8';
                 } else {
-                    // Fallback to numbered rounds.
                     text = `Round ${numberWords[displayRoundNumber] || displayRoundNumber}`;
                 }
 
-                // Get the horizontal center of the active round for the text box.
                 const xPos = p5Rounds[headerRoundIndex][0].pos.x;
                 const yPos = bracketTopY - 20;
                 drawSeparatorLineWithText(yPos, text, xPos);
             } else {
-                // Fallback for an empty bracket, just draw the line.
                 drawSeparatorLineWithText(bracketTopY - 20, "");
             }
         }
@@ -673,7 +683,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         for (let i = pulses.length - 1; i >= 0; i--) {
             const pulse = pulses[i];
             pulse.update();
-             // Simple culling for pulses: check if the bounding box of the path is visible
             if (pulse.path.length > 0) {
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
                 pulse.path.forEach(pt => {
@@ -692,7 +701,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         drawBrackets(viewRect);
         drawNodes(viewRect);
         
-        // Draw crowns on top of all nodes and brackets
         for (const round of p5Rounds) {
             for (const node of round) {
                  const x = node.pos.x - node.width / 2;
@@ -715,7 +723,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         const adjustedMouseX = (p.mouseX - viewOffset.x) / viewScale;
         const adjustedMouseY = (p.mouseY - viewOffset.y) / viewScale;
         
-        // Find hovered node
         for (const round of p5Rounds) {
             for (const node of round) {
                 if (node.playerId &&
@@ -769,12 +776,12 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
                                 tooltipText = city.name;
                             }
                         }
-                    } else { // Over name
+                    } else {
                         if (player.discordOrIGN) {
                             tooltipText = player.discordOrIGN;
                         }
                     }
-                } else { // Not a cities tournament
+                } else {
                     if (player.discordOrIGN) {
                         tooltipText = player.discordOrIGN;
                     }
@@ -791,10 +798,10 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
                 p.noStroke();
                 const textW = p.textWidth(tooltipText);
                 
-                p.fill(0, 0, 10, 0.85); // dark background
+                p.fill(0, 0, 10, 0.85);
                 p.rect(tooltipX, tooltipY, textW + 12, 22, 4);
                 
-                p.fill(0, 0, 95); // white text
+                p.fill(0, 0, 95);
                 p.textAlign(p.LEFT, p.CENTER);
                 p.text(tooltipText, tooltipX + 6, tooltipY + 11);
                 p.pop();
@@ -847,22 +854,19 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
                 const winnerChild = winnerIsChild1 ? child1 : child2;
                 const loserChild = winnerIsChild1 ? child2 : child1;
 
-                // Draw from winner's side to the middle
                 drawNeonLine(
                     p.createVector(midX, winnerChild.pos.y),
                     p.createVector(midX, node.pos.y),
-                    winnerChild.color, // Winner's color
+                    winnerChild.color,
                     4
                 );
-                // Draw from loser's side to the middle
                 drawNeonLine(
                     p.createVector(midX, loserChild.pos.y),
                     p.createVector(midX, node.pos.y),
-                    loserChild.color, // Loser's color (which is neutral)
+                    loserChild.color,
                     4
                 );
             } else {
-                // If match is not decided, draw the full line in neutral color
                 drawNeonLine(
                     p.createVector(midX, child1.pos.y),
                     p.createVector(midX, child2.pos.y),
@@ -952,11 +956,11 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         let glow: number;
     
         const p_drawingContext = p.drawingContext as CanvasRenderingContext2D;
-        const goldColor = p.color(45, 80, 100); // Gold color in HSB
+        const goldColor = p.color(45, 80, 100);
         const dimGoldColor = p.color(45, 50, 60);
 
         if (node.crownState === 'off') {
-            col = p.color(0, 0, 30); // Dim gray
+            col = p.color(0, 0, 30);
             weight = 1.5;
             glow = 0;
         } else if (node.crownState === 'animating') {
@@ -1002,50 +1006,39 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         p_drawingContext.shadowColor = col.toString();
         p.stroke(col);
         p.fill(col);
-        p.strokeWeight(1); // Keep outline thin
+        p.strokeWeight(1);
         p.strokeJoin(p.ROUND);
         
         const w = crownWidth;
         const h = crownHeight;
         const circleR = 2.5;
         
-        // Draw main filled shape using a path
         p.beginShape();
-        // Bottom edge
         p.vertex(-w/2, 0);
         p.vertex(w/2, 0);
-        // Top-right point
         p.vertex(w/2, -h * 0.5);
-        // Mid-right point valley
         p.vertex(w*0.375, -h * 0.4);
-        // Mid-right point peak
         p.vertex(w*0.25, -h * 0.75);
-        // Center valley
         p.vertex(w*0.125, -h * 0.6);
-        // Center peak
         p.vertex(0, -h);
-        // And mirrored for the left side
         p.vertex(-w*0.125, -h * 0.6);
         p.vertex(-w*0.25, -h * 0.75);
         p.vertex(-w*0.375, -h * 0.4);
         p.vertex(-w/2, -h * 0.5);
         p.endShape(p.CLOSE);
         
-        // Add circles to the peaks
         p.ellipse(0, -h - circleR, circleR * 2, circleR * 2);
         p.ellipse(w*0.25, -h * 0.75 - circleR, circleR * 2, circleR * 2);
         p.ellipse(-w*0.25, -h * 0.75 - circleR, circleR * 2, circleR * 2);
         p.ellipse(w/2, -h * 0.5 - circleR, circleR * 2, circleR * 2);
         p.ellipse(-w/2, -h * 0.5 - circleR, circleR * 2, circleR * 2);
         
-        // Neon highlight effect
         if (glow > 0) {
             p_drawingContext.shadowBlur = 0;
             p.noFill();
             p.strokeWeight(weight * 0.5);
             p.stroke(360, 0, 100, 0.8);
 
-            // Redraw outline
             p.beginShape();
             p.vertex(-w/2, 0);
             p.vertex(w/2, 0);
@@ -1060,7 +1053,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
             p.vertex(-w/2, -h * 0.5);
             p.endShape(p.CLOSE);
 
-            // Redraw circles
             p.ellipse(0, -h - circleR, circleR * 2, circleR * 2);
             p.ellipse(w*0.25, -h * 0.75 - circleR, circleR * 2, circleR * 2);
             p.ellipse(-w*0.25, -h * 0.75 - circleR, circleR * 2, circleR * 2);
@@ -1131,7 +1123,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
         
         const touches = p.touches as any[];
         
-        // Reset scroll detection state for each new touch sequence
         isPageScrolling = false;
         touchMoveDecided = false;
 
@@ -1143,8 +1134,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
             previousMouse.set(touches[0].x, touches[0].y);
             touchStartPos = p.createVector(touches[0].x, touches[0].y);
         }
-        // By not returning anything, we allow the browser to consider a scroll or zoom.
-        // `touchMoved` will then explicitly prevent the default action if it detects a pan or pinch gesture meant for the canvas.
       };
 
       p.touchMoved = () => {
@@ -1153,7 +1142,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
 
         const touches = p.touches as any[];
 
-        // Handle pinch-to-zoom (2 touches) - this is an explicit canvas interaction.
         if (touches.length === 2) {
             touchMoveDecided = true;
             isPageScrolling = false;
@@ -1175,21 +1163,18 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
               viewOffset.y = pinchCenterScreen.y - mouseWorldBefore.y * viewScale;
             }
             initialPinchDistance = currentPinchDistance;
-            return false; // Prevent default for pinch-zoom
+            return false;
         }
 
-        // Handle pan vs. scroll (1 touch)
         if (touches.length === 1 && isDragging) {
             const currentPos = p.createVector(touches[0].x, touches[0].y);
 
-            // If we haven't decided the user's intent yet, analyze the movement.
             if (!touchMoveDecided && touchStartPos) {
                 const distMoved = p5.Vector.dist(touchStartPos, currentPos);
 
                 if (distMoved > SCROLL_LOCK_THRESHOLD) {
                     touchMoveDecided = true;
                     const delta = p5.Vector.sub(currentPos, touchStartPos);
-                    // If movement is more vertical than horizontal, we assume page scrolling.
                     if (Math.abs(delta.y) > Math.abs(delta.x)) {
                         isPageScrolling = true;
                     } else {
@@ -1200,22 +1185,19 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
             
             if (touchMoveDecided) {
                 if (isPageScrolling) {
-                    // Intent is to scroll the page, so we release control to the browser.
                     return true; 
                 } else {
-                    // Intent is to pan the canvas.
                     const delta = p5.Vector.sub(currentPos, previousMouse);
                     viewOffset.add(delta);
                     previousMouse.set(currentPos.x, currentPos.y);
-                    return false; // Prevent browser from scrolling.
+                    return false;
                 }
             }
             
-            // If intent is not yet decided, block browser default to prevent jerky movement.
             return false;
         }
         
-        return false; // Default case for other touch events
+        return false;
       };
 
       p.touchEnded = () => {
@@ -1224,7 +1206,6 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
 
         const touches = p.touches as any[];
         
-        // Register a tap for opening the score modal, but only if it wasn't a scroll gesture.
         if (touchStartPos && touches.length === 0) {
             const touchEndPos = previousMouse;
             if (touchStartPos.dist(touchEndPos) < 10 && !isPageScrolling) {
@@ -1232,14 +1213,12 @@ const SingleEliminationBracket = forwardRef<BracketHandles, SingleEliminationBra
             }
         }
         
-        // Reset all touch-related state
         touchStartPos = null;
         isDragging = false;
         isPageScrolling = false;
         touchMoveDecided = false;
         initialPinchDistance = 0;
 
-        // If some touches remain (e.g., going from 2 to 1), reset to a panning state.
         if (touches.length > 0) {
             if (touches.length === 1) {
                 isDragging = true;
